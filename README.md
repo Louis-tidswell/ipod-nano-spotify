@@ -47,8 +47,12 @@ run:
 .\scripts\Install-CommTest.ps1
 ```
 
-Then open **Pi Link Test** on the iPod and tap **SEND TEST**. A working round
-trip changes the status to `Round trip OK` and increments the counter.
+After installation, wait for the iPod to return to its Home Screen, open a
+built-in app such as **Music** or **Settings**, and return Home. Swipe through
+the Home Screen pages to the green link icon named **Pi Link Test** (it is
+registered alphabetically between **Passwords** and **Pong**). Tap **SEND TEST**;
+a working round trip changes the status to `Round trip OK` and increments the
+counter.
 
 Check the bridge service on the Pi with:
 

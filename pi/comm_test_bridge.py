@@ -37,6 +37,18 @@ def address_bytes(address: int) -> list[str]:
 
 
 def find_ipod() -> str:
+    # Linux blocks unprivileged SG_IO commands sent through /dev/sdX even when
+    # the node permissions allow access. The matching /dev/sgX interface is the
+    # intended userspace path and works with the plugdev udev rule.
+    for generic in sorted(Path("/sys/class/scsi_generic").glob("sg*")):
+        try:
+            if "ipod" in (generic / "device/model").read_text().lower():
+                return f"/dev/{generic.name}"
+        except OSError:
+            continue
+
+    # Keep a useful fallback for systems where scsi_generic is unavailable;
+    # running against it may still require root/CAP_SYS_RAWIO.
     result = subprocess.run(
         ["lsblk", "-dno", "NAME,MODEL"],
         check=True,
