@@ -25,23 +25,46 @@ Connect afterward with:
 .\scripts\Connect-Pi.ps1
 ```
 
-## First implementation milestone
+## Current status
 
-1. Inspect the Pi OS, CPU architecture, installed audio services and Bluetooth adapter.
-2. Install/configure BlueZ, PipeWire and WirePlumber as appropriate for that OS.
-3. Pair and trust the intended Bluetooth speaker.
-4. Select its audio sink, play a test sound and verify reconnection after power cycling.
-5. Install go-librespot and verify playback and its localhost control API.
+- The Pi runs 64-bit Debian 13 and is reachable as `ltidswell@ltpi`.
+- This repository is cloned at `/home/ltidswell/ipod-nano-spotify` on the Pi.
+- **Pi Link Test** proves bidirectional Nano-to-Pi SCSI communication: button
+  events reach the Pi and acknowledgements/counters return to the Nano.
+- The bridge runs as the `ipod-comm-test.service` user service.
+- BlueZ detects the Pi's Bluetooth adapter, and its software block is cleared.
+- `~/bt-menu` provides interactive Bluetooth scanning and device management.
 
-## Pi–Nano communication proof
+## Next steps
+
+1. **Prove Bluetooth audio.** Run `~/bt-menu`, scan for the Bose headphones,
+   then pair, trust and connect them. Record their Bluetooth address for later
+   automatic reconnection.
+2. **Select the audio sink.** Run `wpctl status`, find the Bose sink ID, then:
+
+   ```sh
+   wpctl set-default <sink-id>
+   wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.25
+   speaker-test -c 2 -t wav
+   ```
+
+3. **Test recovery.** Stop the test sound, power-cycle the headphones, reconnect
+   them from `~/bt-menu`, and confirm that `wpctl status` shows the sink again.
+   Add automatic bounded reconnection only after this manual test is reliable.
+4. **Install go-librespot.** Install its ARM64 release, configure PipeWire audio,
+   enable Spotify Connect credentials, and bind its REST/WebSocket API to
+   `127.0.0.1`. Verify play, pause, next, previous and volume from the Pi first.
+5. **Connect playback to the Nano.** Replace the counter-only Pi bridge actions
+   with go-librespot commands and return player state through the proven mailbox.
+   Start with play/pause and track status before building the full Nano UI.
+
+## Pi-Nano communication proof
 
 The first Nano app and Pi bridge are in this repository. Their two-page SCSI
 mailbox protocol is documented in [docs/comms-test.md](docs/comms-test.md).
 
-The app has been built successfully with the NanoApps toolchain on the Pi. Its
-one-time installation needs the Pi user's sudo password because NanoApps must
-access the iPod block/SCSI device. From a PowerShell terminal in this repository,
-run:
+The app is installed and its round trip has been verified. On a fresh NanoApps
+installation, deploy it from a PowerShell terminal in this repository with:
 
 ```powershell
 .\scripts\Install-CommTest.ps1
@@ -84,10 +107,17 @@ For a plain status report without opening the interface:
 
 ## Version control
 
-The local repository uses `main` and tracks the GitHub remote:
+The PC checkout is the development copy. Commit and push there:
 
 ```powershell
 git push
+```
+
+Update the Pi checkout afterward:
+
+```sh
+cd /home/ltidswell/ipod-nano-spotify
+git pull --ff-only
 ```
 
 Do not commit Spotify credentials, private keys or runtime authentication data.
