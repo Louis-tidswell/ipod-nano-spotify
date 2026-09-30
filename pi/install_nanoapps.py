@@ -44,7 +44,17 @@ def main() -> None:
     if not install_all and not targets:
         raise SystemExit("No apps selected; add names to nanoapps/apps.toml or set all = true")
     print("Installing " + ("all apps" if install_all else ", ".join(targets)))
-    subprocess.run([str(NANOAPPS / "start"), "install", *targets], cwd=NANOAPPS, check=True)
+    bridge = "ipod-spotify-bridge.service"
+    bridge_was_active = subprocess.run(
+        ["systemctl", "--user", "is-active", "--quiet", bridge], check=False
+    ).returncode == 0
+    if bridge_was_active:
+        subprocess.run(["systemctl", "--user", "stop", bridge], check=True)
+    try:
+        subprocess.run([str(NANOAPPS / "start"), "install", *targets], cwd=NANOAPPS, check=True)
+    finally:
+        if bridge_was_active:
+            subprocess.run(["systemctl", "--user", "start", bridge], check=True)
 
 
 if __name__ == "__main__":
