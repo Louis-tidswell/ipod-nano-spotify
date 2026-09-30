@@ -47,7 +47,11 @@ Connect afterward with:
    ```sh
    sudo apt update
    sudo apt install -y pipewire-audio
+   mkdir -p ~/.config/wireplumber/wireplumber.conf.d
+   cp ~/ipod-nano-spotify/pi/wireplumber-headless-bluetooth.conf \
+      ~/.config/wireplumber/wireplumber.conf.d/51-headless-bluetooth.conf
    systemctl --user enable --now pipewire pipewire-pulse wireplumber
+   systemctl --user restart wireplumber
    wpctl status
    wpctl set-default <sink-id>
    wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.25

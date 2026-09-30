@@ -230,7 +230,7 @@ class BluetoothMenu:
         lines = [line.strip() for line in result.output.splitlines() if line.strip()]
         detail = lines[-1] if lines else ("succeeded" if result.ok else "failed")
         if "br-connection-profile-unavailable" in result.output:
-            detail = "Bluetooth audio profile unavailable; install PipeWire/WirePlumber"
+            detail = "Bluetooth audio profile unavailable; check WirePlumber Bluetooth setup"
         elif "not available" in result.output.lower():
             detail = "Device disappeared; start scanning and put it back in pairing mode"
         self.message = f"{action}: {detail}"
