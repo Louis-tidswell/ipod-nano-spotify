@@ -2,3 +2,4 @@
 	path = vendor/NanoApps
 	url = https://github.com/Louis-tidswell/NanoApps.git
 	branch = ipod-spotify
+	ignore = untracked
