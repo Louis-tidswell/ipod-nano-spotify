@@ -44,6 +44,16 @@ static lv_obj_t *s_content;
 static uint32_t s_nonce, s_seq, s_last_generation, s_last_pi_ms, s_flags;
 static int s_connected;
 
+static void clear_now_playing_refs(void)
+{
+    s_track = NULL;
+    s_artist = NULL;
+    s_progress = NULL;
+    s_time = NULL;
+    s_play = NULL;
+    s_volume = NULL;
+}
+
 static void barrier(void) { __asm__ volatile("dmb" ::: "memory"); }
 
 static uint32_t checksum_words(const uint32_t *words, int count)
@@ -118,6 +128,7 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text, int x, int widt
 
 static void build_now_playing(void)
 {
+    clear_now_playing_refs();
     lv_obj_clean(s_content);
     lv_obj_t *eyebrow = lv_label_create(s_content);
     lv_label_set_text(eyebrow, "NOW PLAYING");
@@ -172,6 +183,7 @@ static void build_now_playing(void)
 
 static void show_placeholder(const char *title, const char *detail)
 {
+    clear_now_playing_refs();
     lv_obj_clean(s_content);
     lv_obj_t *heading = lv_label_create(s_content);
     lv_label_set_text(heading, title);
