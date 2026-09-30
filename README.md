@@ -58,7 +58,28 @@ Check the bridge service on the Pi with:
 
 ```sh
 systemctl --user status ipod-comm-test.service
-journalctl --user -u ipod-comm-test.service -f
+journalctl --user-unit=ipod-comm-test.service -f
+```
+
+## Bluetooth test menu
+
+The Pi has a simple terminal Bluetooth control panel installed at `~/bt-menu`.
+Run it from an interactive SSH session:
+
+```sh
+~/bt-menu
+```
+
+Use the arrow keys to select a device and Enter to open its actions. The main
+screen can scan, refresh, and toggle adapter power. Device actions include pair,
+connect, disconnect, trust, untrust, forget/unpair, block, unblock, and detailed
+status. If Bluetooth is software-blocked, the power action guides you through a
+one-time sudo unblock.
+
+For a plain status report without opening the interface:
+
+```sh
+~/bt-menu --diagnose
 ```
 
 ## Version control
