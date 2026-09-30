@@ -8,6 +8,7 @@ import curses
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -36,11 +37,14 @@ def clean(text: str) -> str:
     return ANSI_RE.sub("", text).replace("\r", "").strip()
 
 
-def ctl(*args: str, timeout: int = 1, agent: bool = False) -> Result:
+def ctl(*args: str, timeout: int = 15, agent: bool = False) -> Result:
     command = ["bluetoothctl"]
     if agent:
         command += ["--agent", "NoInputNoOutput"]
-    command += ["--timeout", str(timeout), *args]
+    # Do not pass bluetoothctl's --timeout here. It deliberately keeps every
+    # process alive for the whole timeout even when a command completed in a
+    # few milliseconds. Python's timeout below remains as the failure guard.
+    command += list(args)
     try:
         completed = subprocess.run(
             command,
@@ -107,7 +111,7 @@ def devices() -> list[Device]:
     # once per discovered device, especially in a busy radio environment.
     by_address = {device.address: device for device in found}
     for property_name in ("Connected", "Paired", "Trusted", "Blocked"):
-        filtered = ctl("devices", property_name, timeout=1)
+        filtered = ctl("devices", property_name)
         for raw in filtered.output.splitlines():
             match = DEVICE_RE.match(raw.strip())
             if match and match.group(1).upper() in by_address:
@@ -117,6 +121,7 @@ def devices() -> list[Device]:
         key=lambda item: (
             not item.yes("Connected"),
             not item.yes("Paired"),
+            bool(re.fullmatch(r"[0-9A-F]{2}(?:-[0-9A-F]{2}){5}", item.name.upper())),
             item.name.casefold(),
         ),
     )
@@ -156,11 +161,21 @@ class BluetoothMenu:
         self.selected = 0
         self.message = "Ready"
         self.controller: dict[str, str] = {}
+        self.scanner: subprocess.Popen[str] | None = None
+        self.last_refresh = 0.0
 
     def refresh_data(self) -> None:
+        selected_address = self.items[self.selected].address if self.items else None
         self.controller = controller_info()
         self.items = devices()
-        self.selected = min(self.selected, max(0, len(self.items) - 1))
+        if selected_address:
+            self.selected = next(
+                (index for index, item in enumerate(self.items) if item.address == selected_address),
+                min(self.selected, max(0, len(self.items) - 1)),
+            )
+        else:
+            self.selected = min(self.selected, max(0, len(self.items) - 1))
+        self.last_refresh = time.monotonic()
 
     def add(self, row: int, col: int, text: str, attr: int = 0) -> None:
         height, width = self.screen.getmaxyx()
@@ -179,7 +194,8 @@ class BluetoothMenu:
 
         self.add(0, 0, " Bluetooth Test Menu ", curses.A_REVERSE | curses.A_BOLD)
         self.add(1, 0, f"Adapter: {adapter}   Power: {power.upper()} {blocked}")
-        self.add(2, 0, "Up/Down: select   Enter: device menu   S: scan   P: power   R: refresh   Q: quit")
+        scan_state = "ON" if self.scanner is not None else "OFF"
+        self.add(2, 0, f"Scan: {scan_state}   Up/Down: select   Enter: actions   S: scan   P: power   Q: quit")
         self.add(3, 0, "Flags: C=connected  P=paired  T=trusted  B=blocked")
         self.add(4, 0, "-" * max(1, width - 1))
 
@@ -237,19 +253,50 @@ class BluetoothMenu:
             self.pause_for_sudo()
         self.controller = controller_info()
         turn_on = self.controller.get("Powered", "no").lower() != "yes"
+        if not turn_on:
+            self.stop_scan()
         self.set_result("Power", ctl("power", "on" if turn_on else "off"))
         self.refresh_data()
 
-    def scan(self) -> None:
+    def start_scan(self) -> None:
         if self.controller.get("Powered", "no").lower() != "yes":
             self.message = "Turn the adapter on first (press P)."
             return
-        self.message = "Scanning for 10 seconds... keep the device in pairing mode."
-        self.draw()
-        result = ctl("scan", "on", timeout=10)
-        ctl("scan", "off", timeout=5)
-        self.set_result("Scan", result)
+        if self.scanner is not None:
+            return
+        try:
+            self.scanner = subprocess.Popen(
+                ["bluetoothctl", "--timeout", "3600", "scan", "on"],
+                text=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.message = "Scanning live. Put the device in pairing mode; press S to stop."
+            time.sleep(0.15)
+        except OSError as error:
+            self.scanner = None
+            self.message = f"Scan failed: {error}"
         self.refresh_data()
+
+    def stop_scan(self) -> None:
+        if self.scanner is None:
+            return
+        self.scanner.terminate()
+        try:
+            self.scanner.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self.scanner.kill()
+            self.scanner.wait()
+        self.scanner = None
+        ctl("scan", "off", timeout=3)
+        self.message = "Scan stopped"
+        self.refresh_data()
+
+    def toggle_scan(self) -> None:
+        if self.scanner is None:
+            self.start_scan()
+        else:
+            self.stop_scan()
 
     def confirm(self, prompt: str) -> bool:
         self.message = f"{prompt} [y/N]"
@@ -273,6 +320,9 @@ class BluetoothMenu:
         if not self.items:
             self.message = "No device selected. Scan first."
             return
+        # Action dialogs should wait for a key like nmtui. The main device list
+        # restores a short timeout so it can update live while scanning.
+        self.screen.timeout(-1)
         device = self.items[self.selected]
         while True:
             device.properties = device_info(device.address)
@@ -302,6 +352,7 @@ class BluetoothMenu:
             key = self.screen.getch()
             if key in (27, ord("q"), ord("Q")):
                 self.refresh_data()
+                self.screen.timeout(250)
                 return
             if key in (ord("i"), ord("I")):
                 self.show_info(device)
@@ -313,12 +364,15 @@ class BluetoothMenu:
             if command[0] == "remove" and not self.confirm(f"Forget {device.name}?"):
                 self.message = "Forget cancelled"
                 continue
+            if command[0] in ("pair", "connect"):
+                self.stop_scan()
             self.message = f"Running {label.lower()}..."
             self.draw()
             result = ctl(*command, timeout=30, agent=command[0] == "pair")
             self.set_result(label, result)
             if command[0] == "remove" and result.ok:
                 self.refresh_data()
+                self.screen.timeout(250)
                 return
 
     def run(self) -> None:
@@ -327,25 +381,34 @@ class BluetoothMenu:
         except curses.error:
             pass
         self.screen.keypad(True)
+        self.screen.timeout(250)
         self.refresh_data()
-        while True:
-            self.draw()
-            key = self.screen.getch()
-            if key in (ord("q"), ord("Q")):
-                return
-            if key in (curses.KEY_UP, ord("k")) and self.items:
-                self.selected = max(0, self.selected - 1)
-            elif key in (curses.KEY_DOWN, ord("j")) and self.items:
-                self.selected = min(len(self.items) - 1, self.selected + 1)
-            elif key in (10, 13, curses.KEY_ENTER):
-                self.device_menu()
-            elif key in (ord("s"), ord("S")):
-                self.scan()
-            elif key in (ord("p"), ord("P")):
-                self.toggle_power()
-            elif key in (ord("r"), ord("R")):
-                self.message = "Refreshed"
-                self.refresh_data()
+        try:
+            while True:
+                if self.scanner is not None and self.scanner.poll() is not None:
+                    self.scanner = None
+                    self.message = "Scan process stopped"
+                if self.scanner is not None and time.monotonic() - self.last_refresh >= 1.0:
+                    self.refresh_data()
+                self.draw()
+                key = self.screen.getch()
+                if key in (ord("q"), ord("Q")):
+                    return
+                if key in (curses.KEY_UP, ord("k")) and self.items:
+                    self.selected = max(0, self.selected - 1)
+                elif key in (curses.KEY_DOWN, ord("j")) and self.items:
+                    self.selected = min(len(self.items) - 1, self.selected + 1)
+                elif key in (10, 13, curses.KEY_ENTER):
+                    self.device_menu()
+                elif key in (ord("s"), ord("S")):
+                    self.toggle_scan()
+                elif key in (ord("p"), ord("P")):
+                    self.toggle_power()
+                elif key in (ord("r"), ord("R")):
+                    self.message = "Refreshed"
+                    self.refresh_data()
+        finally:
+            self.stop_scan()
 
 
 def diagnose() -> int:
