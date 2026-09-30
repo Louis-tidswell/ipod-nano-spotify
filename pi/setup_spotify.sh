@@ -14,6 +14,11 @@ tar -xzf "$temp_dir/$archive" -C "$temp_dir"
 mkdir -p "$HOME/.local/bin" "$HOME/.config/go-librespot" "$HOME/.config/systemd/user"
 install -m 0755 "$temp_dir/go-librespot" "$HOME/.local/bin/go-librespot"
 
+echo "Installing the iPod SCSI permission rule..."
+sudo install -m 0644 "$project_dir/pi/99-ipod-comms.rules" /etc/udev/rules.d/99-ipod-comms.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger --action=change --subsystem-match=scsi_generic
+
 if [ ! -f "$HOME/.config/go-librespot/config.yml" ]; then
     install -m 0600 "$project_dir/pi/go-librespot.yml" "$HOME/.config/go-librespot/config.yml"
 else
@@ -25,6 +30,7 @@ install -m 0644 "$project_dir/pi/ipod-spotify-bridge.service" "$HOME/.config/sys
 chmod +x "$project_dir/pi/spotify_bridge.py"
 systemctl --user daemon-reload
 systemctl --user disable --now ipod-comm-test.service 2>/dev/null || true
+rm -f "$HOME/.config/systemd/user/ipod-comm-test.service"
 systemctl --user enable --now go-librespot.service ipod-spotify-bridge.service
 
 echo

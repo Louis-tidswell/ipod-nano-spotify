@@ -1,115 +1,70 @@
-# iPod Spotify controller
+# iPod nano Spotify controller
 
-Raspberry Pi Spotify player controlled by an iPod nano 7. See
-[the architecture and development phases](spotify-pi-ipod-options.md).
+A Raspberry Pi 4 runs Spotify and sends audio to Bluetooth headphones. An iPod
+nano 7 connected by Lightning acts as the screen and remote control.
+
+## How it fits together
+
+```text
+Spotify phone/desktop
+        |
+        | Spotify cloud
+        v
+go-librespot on the Pi ---- REST API (localhost only) ---- Pi bridge
+        |                                                   |
+        | PipeWire / BlueZ                                  | USB/SCSI mailbox
+        v                                                   v
+Bose headphones                                      iPod nano Spotify app
+```
+
+The Pi appears in Spotify as **iPod Nano**. The physical Nano has no network
+connection or Spotify credentials: it sends controls over USB and displays the
+state returned by the Pi. go-librespot produces audio, PipeWire routes it, and
+BlueZ maintains the bonded headphone connection.
+
+## Repository layout
+
+- `nanoapps/spotify_remote/` — Nano LVGL interface.
+- `nanoapps/apps.toml` — app selection; one true/false switch per app.
+- `vendor/NanoApps/` — pinned `ipod-spotify` branch of the NanoApps fork.
+- `pi/spotify_bridge.py` — USB mailbox to go-librespot API bridge.
+- `pi/bluetooth_autoconnect.py` and `pi/bt_menu.py` — headphone management.
+- `pi/setup_spotify.sh` — go-librespot and user-service setup.
+- `scripts/` — PowerShell entry points for the PC.
+- `docs/spotify-protocol.md` — bounded 512-byte mailbox protocol.
 
 ## Pi access
 
-- Host: `ltpi`
-- User: `ltidswell`
-- Dedicated SSH key: `%USERPROFILE%\.ssh\id_ed25519_ltpi`
-- Private key stays outside this repository and OneDrive.
-
-The Pi is reachable over SSH using the dedicated key. To install that key on a
-fresh Pi, run this once in an interactive PowerShell terminal and enter the Pi
-user's password when prompted:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\Install-PiSshKey.ps1
-```
-
-The script preserves existing authorized keys and verifies key authentication.
-Connect afterward with:
+The project is cloned at `/home/ltidswell/ipod-nano-spotify` on `ltpi` and uses
+the `ltidswell` account. Connect from PowerShell in this repository:
 
 ```powershell
 .\scripts\Connect-Pi.ps1
 ```
 
-## Current status
+On a fresh Pi, install the dedicated SSH key first:
 
-- The Pi runs 64-bit Debian 13 and is reachable as `ltidswell@ltpi`.
-- This repository is cloned at `/home/ltidswell/ipod-nano-spotify` on the Pi.
-- **Pi Link Test** proves bidirectional Nano-to-Pi SCSI communication: button
-  events reach the Pi and acknowledgements/counters return to the Nano.
-- The bridge runs as the `ipod-comm-test.service` user service.
-- BlueZ detects the Pi's Bluetooth adapter, and its software block is cleared.
-- `~/bt-menu` provides interactive Bluetooth scanning and device management.
-- The Bose headphones retain a valid bond and the bounded reconnect service is
-  enabled.
-- go-librespot, its localhost API, the Spotify bridge, and the basic full Nano
-  UI are tracked in this repository and ready to deploy.
+```powershell
+.\scripts\Install-PiSshKey.ps1
+```
 
-## Next steps
+## Spotify setup and authorization
 
-1. **Prove Bluetooth audio.** Run `~/bt-menu`, scan for the Bose headphones,
-   then pair, trust and connect them. Record their Bluetooth address for later
-   automatic reconnection.
-2. **Install the audio stack and select the sink.** This minimal Pi image does
-   not include PipeWire, WirePlumber or a BlueZ audio-profile provider. Install
-   the Raspberry Pi OS audio package, then find the Bose sink ID:
-
-   ```sh
-   sudo apt update
-   sudo apt install -y pipewire-audio
-   mkdir -p ~/.config/wireplumber/wireplumber.conf.d
-   cp ~/ipod-nano-spotify/pi/wireplumber-headless-bluetooth.conf \
-      ~/.config/wireplumber/wireplumber.conf.d/51-headless-bluetooth.conf
-   systemctl --user enable --now pipewire pipewire-pulse wireplumber
-   systemctl --user restart wireplumber
-   wpctl status
-   wpctl set-default <sink-id>
-   wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.25
-   speaker-test -c 2 -t wav
-   ```
-
-3. **Test recovery.** Enable the bounded reconnect service, then power-cycle the
-   headphones and confirm that `wpctl status` shows the sink again:
-
-   ```sh
-   mkdir -p ~/.config/systemd/user
-   cp ~/ipod-nano-spotify/pi/bluetooth-autoconnect.service ~/.config/systemd/user/
-   systemctl --user daemon-reload
-   systemctl --user enable --now bluetooth-autoconnect.service
-   journalctl --user-unit=bluetooth-autoconnect.service -f
-   ```
-
-   The service only reconnects devices that BlueZ reports as both `Paired: yes`
-   and `Bonded: yes`; this prevents an unbonded radio link from reconnecting in
-   a loop without a working audio profile.
-4. **Install and authenticate go-librespot.** Run `scripts/Install-Spotify.ps1`,
-   approve the device code as described below, and start playback by selecting
-   **iPod Nano** in Spotify.
-5. **Install the Nano Spotify app.** Review `nanoapps/apps.toml`, then run
-   `scripts/Install-NanoApps.ps1`. Open **Spotify** on the Nano and verify track
-   metadata, previous, play/pause, next, and volume.
-6. **Expand the basic UI.** Add playlists to the Library screen, Bluetooth and
-   player diagnostics to System, then add album art and seeking.
-
-## Spotify player setup
-
-From PowerShell in this repository:
+Install the pinned ARM64 go-librespot release and services:
 
 ```powershell
 .\scripts\Install-Spotify.ps1
 ```
 
-This installs the pinned ARM64 go-librespot release as `~/.local/bin/go-librespot`,
-places its configuration in `~/.config/go-librespot`, and enables the
-`go-librespot.service` and `ipod-spotify-bridge.service` user services. Its API
-listens only on `127.0.0.1:3678`, and PipeWire supplies the Bluetooth output.
-
-The player uses Spotify's device-authorization flow. It does not accept or store
-your password in this repository. Retrieve the current authorization request on
-the Pi:
+Then retrieve the device-authorization request on the Pi:
 
 ```sh
 curl -s http://127.0.0.1:3678/auth/code
 ```
 
-Open the returned URL, or visit `https://spotify.com/pair` and enter its code.
-The resulting credentials are stored by go-librespot in
-`~/.config/go-librespot/state.json` on the Pi. They must remain outside Git.
-Spotify Premium is required.
+Open the returned URL, or enter its code at `https://spotify.com/pair`. The
+resulting credentials remain in `~/.config/go-librespot/state.json` on the Pi
+and must not be committed. Spotify Premium is required.
 
 Useful checks:
 
@@ -119,97 +74,82 @@ journalctl --user-unit=go-librespot.service -f
 curl -s http://127.0.0.1:3678/status
 ```
 
-## NanoApps selection and fork
+## Selecting and installing Nano apps
 
-The project pins the `ipod-spotify` branch of
-[`Louis-tidswell/NanoApps`](https://github.com/Louis-tidswell/NanoApps) as the
-`vendor/NanoApps` submodule. That branch passes explicitly selected app names to
-the NanoApps packer, preventing previously built apps from being included by
-accident. The original repository remains configured as the fork's `upstream`
-remote.
-
-Choose the installed Home Screen apps in `nanoapps/apps.toml`:
+Edit `nanoapps/apps.toml`. Every available app has an explicit boolean switch;
+only `spotify_remote` is enabled by default:
 
 ```toml
 all = false
-project = ["spotify_remote"]
-upstream = ["calculator", "notes"]
+
+[apps]
+calculator = false
+notes = false
+spotify_remote = true
 ```
 
-Set `all = true` to install every upstream app plus the listed project apps.
-Then run:
+Set individual apps to `true`, or set `all = true` to install everything.
+Install the configured set from the PC with:
 
 ```powershell
 .\scripts\Install-NanoApps.ps1
 ```
 
-Project app source remains under `nanoapps/`; the installer copies only the
-selected project apps into the pinned NanoApps build tree on the Pi. The first
-Spotify UI provides a working Now Playing screen and navigation placeholders
-for Library and System.
-
-## Pi-Nano communication proof
-
-The first Nano app and Pi bridge are in this repository. Their two-page SCSI
-mailbox protocol is documented in [docs/comms-test.md](docs/comms-test.md).
-
-The app is installed and its round trip has been verified. On a fresh NanoApps
-installation, deploy it from a PowerShell terminal in this repository with:
-
-```powershell
-.\scripts\Install-CommTest.ps1
-```
-
-After installation, wait for the iPod to return to its Home Screen, open a
-built-in app such as **Music** or **Settings**, and return Home. Swipe through
-the Home Screen pages to the green link icon named **Pi Link Test** (it is
-registered alphabetically between **Passwords** and **Pong**). Tap **SEND TEST**;
-a working round trip changes the status to `Round trip OK` and increments the
-counter.
-
-Check the bridge service on the Pi with:
+On the Pi, the equivalent command is:
 
 ```sh
-systemctl --user status ipod-comm-test.service
-journalctl --user-unit=ipod-comm-test.service -f
+cd ~/ipod-nano-spotify
+python3 pi/install_nanoapps.py
 ```
 
-## Bluetooth test menu
+The installer copies project apps into the pinned NanoApps build tree, packages
+only the selected apps, pauses the SCSI bridge during installation, and restarts
+it afterward. After installing, open a built-in Nano app and return Home to
+refresh the Home Screen icons.
 
-The Pi has a simple terminal Bluetooth control panel installed at `~/bt-menu`.
-Its Pair action confirms the headset request and verifies that BlueZ saved a
-persistent bond before reporting success.
-Run it from an interactive SSH session:
+## Bluetooth headphones
+
+Run the test menu from an interactive Pi session:
 
 ```sh
 ~/bt-menu
 ```
 
-Use the arrow keys to select a device and Enter to open its actions. The main
-screen can scan, refresh, and toggle adapter power. Device actions include pair,
-connect, disconnect, trust, untrust, forget/unpair, block, unblock, and detailed
-status. If Bluetooth is software-blocked, the power action guides you through a
-one-time sudo unblock.
+Pair once so BlueZ reports `Paired: yes`, `Bonded: yes`, and `Trusted: yes`.
+The `bluetooth-autoconnect.service` only reconnects properly bonded audio
+devices, preventing rapid connection loops. PipeWire's headless Bluetooth
+override is tracked in `pi/wireplumber-headless-bluetooth.conf`.
 
-For a plain status report without opening the interface:
+## Current state
 
-```sh
-~/bt-menu --diagnose
-```
+- Bose Bluetooth audio, bonding, and bounded reconnection work.
+- go-librespot runs at boot and exposes its API only on `127.0.0.1:3678`.
+- The Nano Spotify app shows track/artist, progress, playback state and volume.
+- Previous, play/pause, next, and relative volume commands work over USB.
+- Library and System screens are safe placeholders for later features.
+- The NanoApps fork fixes selective packaging and is pinned as a submodule.
+
+## Next steps
+
+1. Populate Library from go-librespot's playlist and context APIs.
+2. Add Bluetooth, network and player diagnostics to System.
+3. Add seeking and small album art with transfer only on track changes.
+4. Improve recovery after Nano reboot and USB reconnection.
+5. Exercise playback, headphone power cycling and Pi reboot as one end-to-end
+   reliability test.
 
 ## Version control
 
-The PC checkout is the development copy. Commit and push there:
+Commit and push from the PC checkout, then update the Pi:
 
 ```powershell
 git push
 ```
 
-Update the Pi checkout afterward:
-
 ```sh
-cd /home/ltidswell/ipod-nano-spotify
+cd ~/ipod-nano-spotify
 git pull --ff-only
+git submodule update --init --recursive
 ```
 
-Do not commit Spotify credentials, private keys or runtime authentication data.
+Do not commit Spotify state, private keys, tokens, or runtime credentials.
