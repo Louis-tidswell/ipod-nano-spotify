@@ -1,0 +1,13 @@
+[Unit]
+Description=Reconnect trusted Bluetooth audio devices
+After=pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/ipod-nano-spotify/pi/bluetooth_autoconnect.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

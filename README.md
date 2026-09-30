@@ -58,9 +58,16 @@ Connect afterward with:
    speaker-test -c 2 -t wav
    ```
 
-3. **Test recovery.** Stop the test sound, power-cycle the headphones, reconnect
-   them from `~/bt-menu`, and confirm that `wpctl status` shows the sink again.
-   Add automatic bounded reconnection only after this manual test is reliable.
+3. **Test recovery.** Enable the bounded reconnect service, then power-cycle the
+   headphones and confirm that `wpctl status` shows the sink again:
+
+   ```sh
+   mkdir -p ~/.config/systemd/user
+   cp ~/ipod-nano-spotify/pi/bluetooth-autoconnect.service ~/.config/systemd/user/
+   systemctl --user daemon-reload
+   systemctl --user enable --now bluetooth-autoconnect.service
+   journalctl --user-unit=bluetooth-autoconnect.service -f
+   ```
 4. **Install go-librespot.** Install its ARM64 release, configure PipeWire audio,
    enable Spotify Connect credentials, and bind its REST/WebSocket API to
    `127.0.0.1`. Verify play, pause, next, previous and volume from the Pi first.
@@ -97,6 +104,8 @@ journalctl --user-unit=ipod-comm-test.service -f
 ## Bluetooth test menu
 
 The Pi has a simple terminal Bluetooth control panel installed at `~/bt-menu`.
+Its Pair action confirms the headset request and verifies that BlueZ saved a
+persistent bond before reporting success.
 Run it from an interactive SSH session:
 
 ```sh

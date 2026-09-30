@@ -37,10 +37,8 @@ def clean(text: str) -> str:
     return ANSI_RE.sub("", text).replace("\r", "").strip()
 
 
-def ctl(*args: str, timeout: int = 15, agent: bool = False) -> Result:
+def ctl(*args: str, timeout: int = 15, input_text: str | None = None) -> Result:
     command = ["bluetoothctl"]
-    if agent:
-        command += ["--agent", "NoInputNoOutput"]
     # Do not pass bluetoothctl's --timeout here. It deliberately keeps every
     # process alive for the whole timeout even when a command completed in a
     # few milliseconds. Python's timeout below remains as the failure guard.
@@ -50,6 +48,7 @@ def ctl(*args: str, timeout: int = 15, agent: bool = False) -> Result:
             command,
             text=True,
             capture_output=True,
+            input=input_text,
             timeout=timeout + 3,
         )
     except subprocess.TimeoutExpired:
@@ -61,6 +60,35 @@ def ctl(*args: str, timeout: int = 15, agent: bool = False) -> Result:
     failed_words = ("failed", "not available", "not ready", "no default controller")
     ok = completed.returncode == 0 and not any(word in output.lower() for word in failed_words)
     return Result(ok, output or ("Done" if ok else "Command failed"))
+
+
+def pair_device(address: str) -> Result:
+    """Pair through an agent that can approve the headset's confirmation request."""
+    ctl("pairable", "on")
+    try:
+        result = ctl(
+            "--agent",
+            "DisplayYesNo",
+            "pair",
+            address,
+            timeout=30,
+            input_text="yes\n",
+        )
+        if not result.ok:
+            return result
+
+        # A temporary connection is not a completed pairing. Do not tell the
+        # user it worked until BlueZ has retained the security key.
+        for _ in range(10):
+            properties = device_info(address)
+            if properties.get("Paired", "no").lower() == "yes" and properties.get(
+                "Bonded", "no"
+            ).lower() == "yes":
+                return result
+            time.sleep(0.25)
+        return Result(False, "Headphones connected, but BlueZ did not save the pairing key")
+    finally:
+        ctl("pairable", "off")
 
 
 def controller_info() -> dict[str, str]:
@@ -370,7 +398,7 @@ class BluetoothMenu:
                 continue
             self.message = f"Running {label.lower()}..."
             self.draw()
-            result = ctl(*command, timeout=30, agent=command[0] == "pair")
+            result = pair_device(device.address) if command[0] == "pair" else ctl(*command, timeout=30)
             # Unpaired devices are transient BlueZ objects and may disappear as
             # soon as discovery stops. Keep the scanner alive through pair or
             # connect. Pair also marks the device trusted, which is what users
