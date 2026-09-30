@@ -40,9 +40,15 @@ Connect afterward with:
 1. **Prove Bluetooth audio.** Run `~/bt-menu`, scan for the Bose headphones,
    then pair, trust and connect them. Record their Bluetooth address for later
    automatic reconnection.
-2. **Select the audio sink.** Run `wpctl status`, find the Bose sink ID, then:
+2. **Install the audio stack and select the sink.** This minimal Pi image does
+   not include PipeWire, WirePlumber or a BlueZ audio-profile provider. Install
+   the Raspberry Pi OS audio package, then find the Bose sink ID:
 
    ```sh
+   sudo apt update
+   sudo apt install -y pipewire-audio
+   systemctl --user enable --now pipewire pipewire-pulse wireplumber
+   wpctl status
    wpctl set-default <sink-id>
    wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.25
    speaker-test -c 2 -t wav

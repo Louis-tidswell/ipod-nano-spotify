@@ -229,6 +229,10 @@ class BluetoothMenu:
     def set_result(self, action: str, result: Result) -> None:
         lines = [line.strip() for line in result.output.splitlines() if line.strip()]
         detail = lines[-1] if lines else ("succeeded" if result.ok else "failed")
+        if "br-connection-profile-unavailable" in result.output:
+            detail = "Bluetooth audio profile unavailable; install PipeWire/WirePlumber"
+        elif "not available" in result.output.lower():
+            detail = "Device disappeared; start scanning and put it back in pairing mode"
         self.message = f"{action}: {detail}"
 
     def pause_for_sudo(self) -> None:
@@ -364,12 +368,25 @@ class BluetoothMenu:
             if command[0] == "remove" and not self.confirm(f"Forget {device.name}?"):
                 self.message = "Forget cancelled"
                 continue
-            if command[0] in ("pair", "connect"):
-                self.stop_scan()
             self.message = f"Running {label.lower()}..."
             self.draw()
             result = ctl(*command, timeout=30, agent=command[0] == "pair")
-            self.set_result(label, result)
+            # Unpaired devices are transient BlueZ objects and may disappear as
+            # soon as discovery stops. Keep the scanner alive through pair or
+            # connect. Pair also marks the device trusted, which is what users
+            # expect from saving a device in a phone-style Bluetooth menu.
+            if command[0] == "pair" and result.ok:
+                trust_result = ctl("trust", device.address)
+                self.stop_scan()
+                if trust_result.ok:
+                    self.message = f"Pair: {device.name} paired and trusted"
+                else:
+                    self.set_result("Trust after pairing", trust_result)
+            elif command[0] == "connect" and result.ok:
+                self.stop_scan()
+                self.set_result(label, result)
+            else:
+                self.set_result(label, result)
             if command[0] == "remove" and result.ok:
                 self.refresh_data()
                 self.screen.timeout(250)
