@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>	<string>org.ipodspotify.remote</string>
+	<key>CFBundleName</key>		<string>Spotify</string>
+	<key>CFBundleExecutable</key>	<string>spotify_remote</string>
+	<key>HBAppKind</key>			<integer>1</integer>
+	<key>HBIconGlyph</key>		<string>music</string>
+	<key>HBIconColor</key>		<string>#1DB954</string>
+</dict>
+</plist>

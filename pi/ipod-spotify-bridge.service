@@ -1,0 +1,13 @@
+[Unit]
+Description=iPod Nano Spotify controller bridge
+After=go-librespot.service
+Wants=go-librespot.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/ipod-nano-spotify/pi/spotify_bridge.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=go-librespot Spotify Connect player
+After=network-online.target pipewire.service wireplumber.service
+Wants=network-online.target pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/go-librespot -config_dir %h/.config/go-librespot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

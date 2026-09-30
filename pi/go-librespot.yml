@@ -1,0 +1,15 @@
+log_level: info
+device_name: iPod Nano
+device_type: speaker
+bitrate: 320
+audio_backend: pulseaudio
+audio_device: default
+zeroconf_enabled: false
+credentials:
+  type: device_auth
+server:
+  enabled: true
+  address: 127.0.0.1
+  port: 3678
+  allow_origin: ''
+  image_size: small

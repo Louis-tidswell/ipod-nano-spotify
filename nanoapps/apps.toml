@@ -1,0 +1,5 @@
+# Apps installed by scripts/Install-NanoApps.ps1.
+# Set all = true to install every upstream NanoApps app plus the project apps.
+all = false
+project = ["spotify_remote"]
+upstream = []
