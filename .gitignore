@@ -1,0 +1,13 @@
+# Local secrets and runtime state
+.env
+.env.*
+!.env.example
+.ssh/
+*.pem
+*.key
+credentials*.json
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+Thumbs.db
