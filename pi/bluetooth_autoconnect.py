@@ -43,7 +43,15 @@ def trusted_audio_devices() -> list[tuple[str, str]]:
         if not match:
             continue
         address, name = match.groups()
-        if AUDIO_SINK_UUID in bluetoothctl("info", address).lower():
+        info_text = bluetoothctl("info", address)
+        info = properties(address)
+        # Connecting an unbonded device can briefly raise Connected=yes and
+        # then fail every audio profile, creating a rapid reconnect loop.
+        if (
+            AUDIO_SINK_UUID in info_text.lower()
+            and info.get("Paired", "no").lower() == "yes"
+            and info.get("Bonded", "no").lower() == "yes"
+        ):
             found.append((address, name))
     return found
 

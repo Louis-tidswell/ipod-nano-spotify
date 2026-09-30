@@ -68,6 +68,10 @@ Connect afterward with:
    systemctl --user enable --now bluetooth-autoconnect.service
    journalctl --user-unit=bluetooth-autoconnect.service -f
    ```
+
+   The service only reconnects devices that BlueZ reports as both `Paired: yes`
+   and `Bonded: yes`; this prevents an unbonded radio link from reconnecting in
+   a loop without a working audio profile.
 4. **Install go-librespot.** Install its ARM64 release, configure PipeWire audio,
    enable Spotify Connect credentials, and bind its REST/WebSocket API to
    `127.0.0.1`. Verify play, pause, next, previous and volume from the Pi first.
