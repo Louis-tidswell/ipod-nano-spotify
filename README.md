@@ -28,7 +28,8 @@ BlueZ maintains the bonded headphone connection.
 - `nanoapps/apps.toml` — app selection; one true/false switch per app.
 - `vendor/NanoApps/` — pinned `ipod-spotify` branch of the NanoApps fork.
 - `pi/spotify_bridge.py` — USB mailbox to go-librespot API bridge.
-- `pi/bluetooth_autoconnect.py` and `pi/bt_menu.py` — headphone management.
+- `pi/bluetooth_control.py` — USB adapter audio control and preferred-device reconnection.
+- `pi/bt_menu.py` — terminal Bluetooth management.
 - `pi/setup_spotify.sh` — go-librespot and user-service setup.
 - `scripts/` — PowerShell entry points for the PC.
 - `docs/spotify-protocol.md` — bounded 512-byte mailbox protocol.
@@ -109,16 +110,31 @@ refresh the Home Screen icons.
 
 ## Bluetooth headphones
 
-Run the test menu from an interactive Pi session:
+On the Nano, open **Spotify → System**. Tap a saved device, then **Pair / Connect**
+or **Disconnect**. **Forget...** opens a confirmation before removing its pairing.
+Devices show `[saved]`, `[linked]`, or `[audio]` (audio output available).
+
+For a new speaker, put it in pairing mode, tap **Scan for speakers**, choose its
+name, and tap **Pair / Connect**. Use the arrows for more than three devices.
+Discovery stops after 60 seconds or a successful connection. Pairing supports
+NoInputNoOutput speakers/headphones; PIN/passkey devices need terminal pairing.
+
+The bridge pins the USB Bluetooth adapter address in
+`~/.config/nanoapps/bluetooth.json`. Devices saved on the built-in adapter must
+be paired again on USB. The same file saves one preferred speaker and whether
+to reconnect it. Selecting a speaker disconnects other audio devices on that
+adapter and routes existing streams to its output. Disconnect and Forget disable
+reconnection for the preferred device.
+
+The bridge requires `python3-dbus`, installed by `pi/setup_spotify.sh`. Disable
+the old service so it cannot compete with the new controller:
 
 ```sh
-~/bt-menu
+systemctl --user disable --now bluetooth-autoconnect.service
 ```
 
-Pair once so BlueZ reports `Paired: yes`, `Bonded: yes`, and `Trusted: yes`.
-The `bluetooth-autoconnect.service` only reconnects properly bonded audio
-devices, preventing rapid connection loops. PipeWire's headless Bluetooth
-override is tracked in `pi/wireplumber-headless-bluetooth.conf`.
+Terminal diagnostics remain available through `~/bt-menu`. PipeWire's headless
+Bluetooth override is tracked in `pi/wireplumber-headless-bluetooth.conf`.
 
 ## Current state
 
@@ -126,13 +142,14 @@ override is tracked in `pi/wireplumber-headless-bluetooth.conf`.
 - go-librespot runs at boot and exposes its API only on `127.0.0.1:3678`.
 - The Nano Spotify app shows track/artist, progress, playback state and volume.
 - Previous, play/pause, next, and relative volume commands work over USB.
-- Library and System screens are safe placeholders for later features.
+- System provides Bluetooth scanning, pairing, connection and removal controls.
+- Library remains a placeholder.
 - The NanoApps fork fixes selective packaging and is pinned as a submodule.
 
 ## Next steps
 
 1. Populate Library from go-librespot's playlist and context APIs.
-2. Add Bluetooth, network and player diagnostics to System.
+2. Add network and player diagnostics to System.
 3. Add seeking and small album art with transfer only on track changes.
 4. Improve recovery after Nano reboot and USB reconnection.
 5. Exercise playback, headphone power cycling and Pi reboot as one end-to-end

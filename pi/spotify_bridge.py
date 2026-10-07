@@ -15,12 +15,14 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+from bluetooth_control import BluetoothControl
+
 PAGE_SIZE = 512
 NANO_TO_PI_ADDR = 0x09122000
 PI_TO_NANO_ADDR = 0x09122200
 NANO_TO_PI_MAGIC = 0x4932504E
 PI_TO_NANO_MAGIC = 0x4E324950
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 CHECKSUM_SALT = 0xA5A55A5A
 COMMAND_HEADER = struct.Struct("<7I")
 STATUS_HEADER = struct.Struct("<11I")
@@ -138,20 +140,26 @@ class Snapshot:
 
 
 def bounded(text: str, size: int) -> bytes:
-    raw = text.encode("utf-8", errors="replace")[: size - 1]
+    raw = text.encode("utf-8", errors="replace")[: size - 1].decode("utf-8", errors="ignore").encode("utf-8")
     return raw + bytes(size - len(raw))
 
 
-def decode_command(data: bytes) -> tuple[int, int, int, int] | None:
+def page_checksum(data: bytes, skip: int) -> int:
+    words = struct.unpack("<128I", data)
+    return checksum(tuple(word for index, word in enumerate(words) if index != skip))
+
+
+def decode_command(data: bytes) -> tuple[int, int, int, int, str] | None:
+    if len(data) != PAGE_SIZE:
+        return None
     magic, version, seq, command, value, nonce, received = COMMAND_HEADER.unpack_from(data)
-    words = (magic, version, seq, command, value, nonce)
-    if magic != NANO_TO_PI_MAGIC or version != PROTOCOL_VERSION or checksum(words) != received:
+    if magic != NANO_TO_PI_MAGIC or version != PROTOCOL_VERSION or page_checksum(data, 6) != received:
         return None
     signed_value = value if value < 0x80000000 else value - 0x100000000
-    return seq, command, signed_value, nonce
+    return seq, command, signed_value, nonce, data[28:46].split(b"\0", 1)[0].decode("ascii", errors="replace")
 
 
-def encode_status(generation: int, ack: int, nonce: int, status: Snapshot) -> bytes:
+def encode_status(generation: int, ack: int, nonce: int, status: Snapshot, bluetooth: tuple = (0, 0, 0, "", [])) -> bytes:
     words = (
         PI_TO_NANO_MAGIC, PROTOCOL_VERSION, generation, ack, status.flags,
         status.position_ms, status.duration_ms, status.volume_percent,
@@ -162,14 +170,14 @@ def encode_status(generation: int, ack: int, nonce: int, status: Snapshot) -> by
     page[44:140] = bounded(status.track, 96)
     page[140:236] = bounded(status.artist, 96)
     page[236:300] = bounded(status.message, 64)
+    bt_flags, total, index, message, devices = bluetooth
+    struct.pack_into("<4I", page, 300, bt_flags, total, index, len(devices))
+    page[316:356] = bounded(message, 40)
+    for row, device in enumerate(devices):
+        struct.pack_into("<18sH32s", page, 356 + row * 52,
+                         bounded(device["address"], 18), device["flags"], bounded(device["name"], 32))
+    struct.pack_into("<I", page, 40, page_checksum(bytes(page), 10))
     return bytes(page)
-
-
-def speaker_connected() -> bool:
-    result = subprocess.run(
-        ["bluetoothctl", "devices", "Connected"], text=True, capture_output=True, timeout=3
-    )
-    return "Device " in result.stdout
 
 
 def get_snapshot(api: PlayerApi) -> Snapshot:
@@ -202,13 +210,6 @@ def get_snapshot(api: PlayerApi) -> Snapshot:
     except (OSError, ValueError, urllib.error.URLError):
         snapshot.message = "go-librespot offline"
         snapshot.error_code = 1
-    try:
-        if speaker_connected():
-            snapshot.flags |= FLAG_SPEAKER
-        elif snapshot.message in ("Playing", "Spotify ready"):
-            snapshot.message = "Headphones disconnected"
-    except (OSError, subprocess.TimeoutExpired):
-        pass
     return snapshot
 
 
@@ -216,6 +217,8 @@ def run(device: str | None, api_url: str, interval: float) -> None:
     stopping = False
     mailbox: ScsiMailbox | None = None
     api = PlayerApi(api_url)
+    bluetooth = BluetoothControl()
+    bluetooth.start()
     last_seq: int | None = None
     last_nonce: int | None = None
     ack = 0
@@ -238,7 +241,8 @@ def run(device: str | None, api_url: str, interval: float) -> None:
                     print(f"Spotify bridge using {mailbox.device}", flush=True)
                 request = decode_command(mailbox.read(NANO_TO_PI_ADDR))
                 if request:
-                    seq, command, value, nonce = request
+                    seq, command, value, nonce, address = request
+                    bluetooth.last_seen = time.monotonic()
                     if nonce != last_nonce:
                         last_nonce, last_seq, ack = nonce, None, 0
                         print(f"Nano Spotify session {nonce:08x} connected", flush=True)
@@ -246,7 +250,10 @@ def run(device: str | None, api_url: str, interval: float) -> None:
                         last_seq, ack = seq, seq
                         if command != CMD_HELLO:
                             try:
-                                api.command(command, value)
+                                if 10 <= command <= 14:
+                                    bluetooth.submit(command, value, address)
+                                else:
+                                    api.command(command, value)
                                 print(f"command={command} value={value}", flush=True)
                             except (OSError, ValueError, urllib.error.URLError) as error:
                                 print(f"player command failed: {error}", flush=True)
@@ -256,7 +263,11 @@ def run(device: str | None, api_url: str, interval: float) -> None:
                         snapshot = get_snapshot(api)
                         next_refresh = now + 0.75
                     generation = (generation + 1) & 0xFFFFFFFF or 1
-                    mailbox.write(PI_TO_NANO_ADDR, encode_status(generation, ack, nonce, snapshot))
+                    bt = bluetooth.snapshot()
+                    snapshot.flags &= ~FLAG_SPEAKER
+                    if bt[0] & 16:
+                        snapshot.flags |= FLAG_SPEAKER
+                    mailbox.write(PI_TO_NANO_ADDR, encode_status(generation, ack, nonce, snapshot, bt))
             except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
                 print(f"Nano link unavailable: {error}", flush=True)
                 if mailbox:
@@ -265,6 +276,7 @@ def run(device: str | None, api_url: str, interval: float) -> None:
                 time.sleep(1)
             time.sleep(max(0.0, interval - (time.monotonic() - started)))
     finally:
+        bluetooth.close()
         if mailbox:
             mailbox.close()
 

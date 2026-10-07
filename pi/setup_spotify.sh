@@ -8,6 +8,8 @@ url="https://github.com/devgianlu/go-librespot/releases/download/$version/$archi
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
+sudo apt-get install -y python3-dbus
+
 echo "Installing go-librespot $version..."
 curl -fL "$url" -o "$temp_dir/$archive"
 tar -xzf "$temp_dir/$archive" -C "$temp_dir"
@@ -29,6 +31,7 @@ install -m 0644 "$project_dir/pi/go-librespot.service" "$HOME/.config/systemd/us
 install -m 0644 "$project_dir/pi/ipod-spotify-bridge.service" "$HOME/.config/systemd/user/"
 chmod +x "$project_dir/pi/spotify_bridge.py"
 systemctl --user daemon-reload
+systemctl --user disable --now bluetooth-autoconnect.service 2>/dev/null || true
 systemctl --user disable --now ipod-comm-test.service 2>/dev/null || true
 rm -f "$HOME/.config/systemd/user/ipod-comm-test.service"
 systemctl --user enable --now go-librespot.service ipod-spotify-bridge.service
