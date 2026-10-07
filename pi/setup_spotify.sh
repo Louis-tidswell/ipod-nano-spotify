@@ -1,14 +1,14 @@
 #!/bin/sh
 set -eu
 
-version=${GO_LIBRESPOT_VERSION:-v0.10.2}
+version=${GO_LIBRESPOT_VERSION:-v0.10.3}
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 archive="go-librespot_linux_arm64.tar.gz"
 url="https://github.com/devgianlu/go-librespot/releases/download/$version/$archive"
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
-sudo apt-get install -y python3-dbus
+sudo apt-get install -y python3-dbus python3-pil
 
 echo "Installing go-librespot $version..."
 curl -fL "$url" -o "$temp_dir/$archive"

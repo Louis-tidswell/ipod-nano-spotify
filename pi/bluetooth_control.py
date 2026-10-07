@@ -126,7 +126,8 @@ class BluetoothControl:
             device = entry.get("org.bluez.Device1", {})
             if device.get("Adapter") != self.adapter or device.get("Blocked"):
                 continue
-            audio = SINK_UUID in device.get("UUIDs", []) or device.get("Icon", "").startswith("audio-")
+            audio = (SINK_UUID in device.get("UUIDs", []) or device.get("Icon", "").startswith("audio-")
+                     or int(device.get("Class", 0)) & 0x1f00 == 0x0400)
             # During discovery, class/service information may arrive after the name.
             if not audio and (device.get("Paired") or "RSSI" not in device):
                 continue
@@ -233,7 +234,21 @@ class BluetoothControl:
                 self.status("Scan stopped")
             else:
                 set_property(self.adapter, "org.bluez.Adapter1", "Powered", True)
-                self.scanner = self.session("scan on")
+                self.scanner = self.session("scan.transport auto", "scan on")
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    adapter_props = objects().get(self.adapter, {}).get("org.bluez.Adapter1", {})
+                    if adapter_props.get("Discovering"):
+                        break
+                    if self.scanner.poll() is not None:
+                        break
+                    time.sleep(.1)
+                else:
+                    self.stop_scan()
+                    raise RuntimeError("Discovery failed; try Scan again")
+                if not adapter_props.get("Discovering"):
+                    self.stop_scan()
+                    raise RuntimeError("Discovery failed; try Scan again")
                 self.scan_until = time.monotonic() + 60
                 with self.lock:
                     self.flags |= 2

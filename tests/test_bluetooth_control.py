@@ -26,10 +26,10 @@ class ProtocolTests(unittest.TestCase):
         devices = [dict(address='C0:28:8D:72:38:C2', flags=7, name='é' * 100)] * 3
         page = encode_status(1, 2, 3, Snapshot(track='Song'), (17, 8, 2, 'Ready', devices))
         self.assertEqual(len(page), 512)
-        self.assertEqual(struct.unpack_from('<4I', page, 300), (17, 8, 2, 3))
+        self.assertEqual(struct.unpack_from('<5I', page, 236), (1, 17, 8, 2, 3))
         self.assertEqual(struct.unpack_from('<I', page, 40)[0], page_checksum(page, 10))
         for row in range(3):
-            address, flags, name = struct.unpack_from('<18sH32s', page, 356 + row * 52)
+            address, flags, name = struct.unpack_from('<18sH44s', page, 320 + row * 64)
             self.assertEqual(address.rstrip(b'\0'), b'C0:28:8D:72:38:C2')
             self.assertEqual(flags, 7)
             self.assertEqual(name[-1], 0)
@@ -72,6 +72,16 @@ class ControlTests(unittest.TestCase):
                             'Alias': 'Wrong adapter', 'Paired': True, 'Bonded': True, 'Icon': 'audio-headset'}}}
         self.bt.refresh()
         self.assertEqual([d['name'] for d in self.bt.devices], ['Speaker'])
+
+    @patch('bluetooth_control.audio_nodes', return_value=[])
+    @patch('bluetooth_control.objects')
+    def test_discovered_audio_class_is_visible_before_uuids_arrive(self, objects, nodes):
+        objects.return_value = {
+            '/usb': {'org.bluez.Adapter1': {'Address': 'USB', 'Powered': True}},
+            '/usb/speaker': {'org.bluez.Device1': {'Adapter': '/usb', 'Address': self.device['address'],
+                            'Alias': 'WONDERBOOM', 'Class': 0x240404, 'Paired': False}}}
+        self.bt.refresh()
+        self.assertEqual([d['name'] for d in self.bt.devices], ['WONDERBOOM'])
 
     def test_busy_rejects_second_mutating_action(self):
         self.bt.submit(12, 0, self.device['address'])

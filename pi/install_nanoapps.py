@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import shutil
+import argparse
 import subprocess
 import tomllib
 from pathlib import Path
@@ -26,6 +27,10 @@ def project_apps() -> dict[str, Path]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--managed', action='store_true', help='Use the installed config-page helper')
+    parser.add_argument('--reload-only', action='store_true', help='Register apps already on disk without rebuilding them')
+    args = parser.parse_args()
     config = tomllib.loads(MANIFEST.read_text())
     install_all = bool(config.get("all", False))
     switches = config.get("apps", {})
@@ -68,7 +73,12 @@ def main() -> None:
     if bridge_was_active:
         subprocess.run(["systemctl", "--user", "stop", bridge], check=True)
     try:
-        subprocess.run([str(NANOAPPS / "start"), "install", *targets], cwd=NANOAPPS, check=True)
+        if args.managed:
+            from managed_nano import install
+            install(NANOAPPS, targets, args.reload_only)
+        else:
+            command = [str(NANOAPPS / 'start'), 'run', 'silver_resident'] if args.reload_only else [str(NANOAPPS / 'start'), 'install', *targets]
+            subprocess.run(command, cwd=NANOAPPS, check=True)
     finally:
         if bridge_was_active:
             subprocess.run(["systemctl", "--user", "start", bridge], check=True)

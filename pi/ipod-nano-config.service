@@ -1,0 +1,14 @@
+[Unit]
+Description=Local iPod Nano configuration page
+After=network-online.target go-librespot.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/ipod-nano-spotify
+ExecStart=/usr/bin/python3 %h/ipod-nano-spotify/pi/config_server.py --port 8080
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=default.target
