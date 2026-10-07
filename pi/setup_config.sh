@@ -19,7 +19,10 @@ sudo visudo -cf "$rule_file"
 sudo install -o root -g root -m 0440 "$rule_file" /etc/sudoers.d/ipod-nano-config
 mkdir -p "$HOME/.config/systemd/user"
 install -m 0644 "$repo_root/pi/ipod-nano-config.service" "$HOME/.config/systemd/user/"
+install -m 0644 "$repo_root/pi/ipod-nano-boot-reload.service" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
+# Enable for the next Pi boot. Do not reload an in-use Nano during setup.
+systemctl --user enable ipod-nano-boot-reload.service
 systemctl --user enable --now ipod-nano-config.service
 systemctl --user restart ipod-nano-config.service
 sudo loginctl enable-linger "$account"

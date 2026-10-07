@@ -1,0 +1,15 @@
+[Unit]
+Description=Reload connected Nano apps once at Pi startup
+Before=ipod-spotify-bridge.service ipod-nano-config.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/ipod-nano-spotify
+ExecStart=/usr/bin/python3 %h/ipod-nano-spotify/pi/reload_nano_at_boot.py
+RemainAfterExit=yes
+TimeoutStartSec=90
+KillMode=control-group
+UMask=0077
+
+[Install]
+WantedBy=default.target

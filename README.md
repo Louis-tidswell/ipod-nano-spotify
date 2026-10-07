@@ -70,6 +70,33 @@ The existing `python3 pi/install_nanoapps.py` command and `nanoapps/apps.toml`
 selection still work. After config setup, a quick CLI reload is also available:
 `python3 pi/install_nanoapps.py --managed --reload-only`.
 
+### Nano reload at Pi startup
+
+When the Pi boots with the Nano connected by USB, it automatically runs the quick
+reload command above so the installed apps, including Spotify's **System → Config**
+address, can be accessed. It waits up to 20 seconds for USB enumeration and skips
+the reload when no Nano is present. This registers the apps already on disk; it
+does not rebuild/reinstall the selected app set or change app data.
+
+`ipod-nano-boot-reload.service` runs before the USB bridge and config page to avoid
+simultaneous USB operations. A saved Linux boot ID limits it to one attempt per Pi
+boot, including a skipped/failed attempt. It only accepts a start during the first
+120 seconds of Pi uptime; it does not reload on later USB reconnects, web-service
+restarts, logins, or user-service restarts. Setup enables it for the next Pi boot
+without reloading an in-use Nano immediately. If loading fails, the bridge and web
+page still start; use the page's manual **Reload installed apps** button to retry.
+
+After startup reload, open Music or Settings on the Nano and return Home if the
+icons need refreshing, then open **Spotify → System → Config** for the current URL.
+The Config address continues to refresh when the Pi's network address changes.
+
+```sh
+systemctl --user status ipod-nano-boot-reload.service
+journalctl --user -u ipod-nano-boot-reload.service -b --no-pager
+```
+
+To disable automatic boot reload: `systemctl --user disable ipod-nano-boot-reload.service`.
+
 The page starts at boot as the normal Pi user via `ipod-nano-config.service` and
 listens on all IPv4 interfaces, port 8080. This is local-network HTTP; do not forward
 the port to the internet. The Spotify API remains on `127.0.0.1:3678`.
@@ -164,6 +191,8 @@ usage is billed separately by OpenAI.
 - `pi/config_server.py`, `pi/config_web/` — LAN page and assets.
 - `pi/spotify_profiles.py` — saved Spotify accounts.
 - `pi/config_helper.py`, `pi/setup_config.sh` — restricted Pi controls and setup.
+- `pi/reload_nano_at_boot.py`, `pi/ipod-nano-boot-reload.service` — connected-Nano
+  app registration once during Pi boot.
 - `scripts/` — PowerShell entry points for the PC.
 - `docs/spotify-protocol.md` — bounded 512-byte mailbox protocol.
 
@@ -339,7 +368,9 @@ python3 tests/run_config_browser.py
 
 The native UI check builds the actual Nano source against LVGL and checks screen
 bounds, navigation, playback controls, Bluetooth, playlists, artwork and the Config
-URL. Browser tests use isolated temporary profiles and mocked Pi actions; they
+URL. Boot-reload tests simulate connected/absent/delayed USB, repeated service
+starts, a new Linux boot ID, startup time limits and failed reloads without
+rebooting the Pi. Browser tests use isolated temporary profiles and mocked Pi actions; they
 exercise setup/password access, profile login cancellation, app selection/reload,
 confirmation dialogs and all six layouts at phone width. The browser test requires
 `chromium`, `chromium-driver` and `python3-selenium`; Node is only used for the syntax
